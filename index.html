@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>レシート集計リーダー (名簿連動版)</title>
+    <!-- Tailwind CSS (スタイリング) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- localForage (内部ストレージ) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
+    <!-- SheetJS (Excel/CSV 読み書き) -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3b82f6;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .table-container { overflow-x: auto; }
+        th, td { white-space: nowrap; }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 pb-20">
+
+    <!-- ヘッダー -->
+    <header class="bg-blue-700 text-white p-4 shadow-md sticky top-0 z-10 flex justify-between items-center">
+        <h1 class="text-xl font-bold">📊 レシート集計 (名簿版)</h1>
+        <button id="nav-settings-btn" class="p-2 rounded hover:bg-blue-800 text-sm font-bold">⚙️ 設定/名簿</button>
+    </header>
+
+    <main class="p-4 max-w-2xl mx-auto">
+        <!-- エラーメッセージ -->
+        <div id="error-msg" class="hidden bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-4 rounded shadow-sm"></div>
+
+        <!-- ⚙️ 初期設定・名簿インポートエリア -->
+        <section id="setup-area" class="hidden bg-white p-6 rounded-xl shadow-md mb-6">
+            <h2 class="text-lg font-bold mb-2 text-blue-700 border-b pb-2">1. APIキー設定</h2>
+            <p class="text-xs text-gray-600 mb-3">Google Vision APIのキーを入力してください。</p>
+            <input type="text" id="api-key-input" class="w-full border p-3 rounded mb-4 outline-none focus:ring-2 focus:ring-blue-500">
+            <button id="save-key-btn" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded shadow hover:bg-blue-700">APIキーを保存</button>
+            
+            <h2 class="text-lg font-bold mb-2 mt-8 text-blue-700 border-b pb-2">2. 名簿データのインポート</h2>
+            <p class="text-xs text-gray-600 mb-3">元のバーコードシステムで使用していた名簿(CSV/Excel)を読み込みます。</p>
+            <input type="file" id="roster-file-input" accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" class="w-full border p-2 rounded mb-4">
+            
+            <div class="mt-8 border-t pt-4">
+                <button id="cancel-settings-btn" class="hidden w-full bg-gray-200 text-gray-700 font-bold py-3 px-4 rounded shadow hover:bg-gray-300 mb-4">メイン画面へ戻る</button>
+                <button id="clear-roster-btn" class="w-full bg-red-50 text-red-600 font-bold py-2 rounded hover:bg-red-100 border border-red-200 text-sm">🗑️ 名簿と履歴をすべて初期化</button>
+            </div>
+        </section>
+
+        <!-- 📱 メイン操作エリア -->
+        <section id="main-area" class="hidden">
+            <input type="file" id="image-input" accept="image/*" class="hidden">
+
+            <!-- サマリー・統計表示 -->
+            <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4 shadow-sm flex justify-between items-center">
+                <div class="text-sm">
+                    登録: <span id="stats-total" class="font-bold text-lg">0</span>人 / 
+                    支払済: <span id="stats-paid" class="font-bold text-lg text-green-600">0</span>人
+                </div>
+                <div class="text-right">
+                    <span class="text-xs text-gray-500 block">合計金額</span>
+                    <span id="stats-amount" class="text-xl font-bold text-blue-700">0 円</span>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4 mb-6" id="action-buttons">
+                <button id="camera-btn" class="bg-indigo-500 text-white font-bold py-4 px-2 rounded-xl shadow hover:bg-indigo-600 flex flex-col items-center">
+                    <span class="text-2xl mb-1">📷</span><span>カメラで撮影</span>
+                </button>
+                <button id="file-btn" class="bg-teal-500 text-white font-bold py-4 px-2 rounded-xl shadow hover:bg-teal-600 flex flex-col items-center">
+                    <span class="text-2xl mb-1">🖼️</span><span>画像を選ぶ</span>
+                </button>
+            </div>
+
+            <!-- 画像プレビュー -->
+            <div id="preview-area" class="hidden bg-white p-4 rounded-xl shadow-md mb-6 text-center">
+                <img id="preview-img" src="" alt="プレビュー" class="max-h-64 mx-auto rounded border border-gray-200 mb-4 object-contain">
+                <div class="flex gap-2">
+                    <button id="cancel-scan-btn" class="w-1/3 bg-gray-300 text-gray-700 font-bold py-3 rounded-lg shadow hover:bg-gray-400">戻る</button>
+                    <button id="scan-btn" class="w-2/3 bg-green-500 text-white font-bold py-3 rounded-lg shadow hover:bg-green-600 text-lg">✨ OCR読み取り</button>
+                </div>
+            </div>
+
+            <!-- 📝 抽出結果＆名簿照合エリア -->
+            <div id="extraction-area" class="hidden bg-white p-5 rounded-xl shadow-md mb-6 border-2 border-indigo-400">
+                <h3 class="font-bold text-lg text-indigo-700 mb-3 border-b pb-2">1. 読み取りテキスト (修正可)</h3>
+                
+                <div class="grid grid-cols-3 gap-2 mb-3">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-600 mb-1">番組</label>
+                        <input type="text" id="ext-bangumi" class="w-full border p-2 rounded text-sm bg-gray-50">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-600 mb-1">組</label>
+                        <input type="text" id="ext-kumi" class="w-full border p-2 rounded text-sm bg-gray-50">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-600 mb-1">No.</label>
+                        <input type="text" id="ext-no" class="w-full border p-2 rounded text-sm bg-gray-50">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4 mb-4">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-600 mb-1">お名前 (様の前)</label>
+                        <input type="text" id="ext-name" class="w-full border p-2 rounded text-sm bg-gray-50">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-600 mb-1">金額 (円の前)</label>
+                        <input type="number" id="ext-amount" class="w-full border p-2 rounded text-sm text-right bg-gray-50">
+                    </div>
+                </div>
+
+                <details class="mb-4 text-xs text-gray-500">
+                    <summary class="cursor-pointer hover:text-gray-700">生のOCRテキストを確認</summary>
+                    <textarea id="raw-text" class="w-full h-24 mt-2 p-2 border rounded font-mono" readonly></textarea>
+                </details>
+
+                <hr class="my-4">
+                <h3 class="font-bold text-lg text-green-700 mb-3 border-b pb-2">2. 名簿データと照合・確定</h3>
+                
+                <label class="block text-sm font-bold text-gray-700 mb-2">該当する人を選択してください</label>
+                <select id="matched-person-select" class="w-full border border-green-400 p-3 rounded mb-4 bg-green-50 focus:outline-none focus:ring-2 focus:ring-green-500 text-sm">
+                    <!-- Javascriptで名簿を展開 -->
+                </select>
+
+                <div class="flex gap-2">
+                    <button id="cancel-save-btn" class="w-1/3 bg-gray-200 text-gray-700 font-bold py-3 rounded-lg shadow hover:bg-gray-300 text-sm">キャンセル</button>
+                    <button id="save-list-btn" class="w-2/3 bg-indigo-600 text-white font-bold py-3 rounded-lg shadow hover:bg-indigo-700 text-lg">
+                        💾 支払済として記録
+                    </button>
+                </div>
+            </div>
+
+            <!-- 📋 名簿・集計リストエリア -->
+            <div id="summary-section">
+                <div class="flex justify-between items-end mb-2 border-b pb-2">
+                    <h2 class="text-lg font-bold text-gray-700">📋 名簿一覧</h2>
+                    <button id="export-excel-btn" class="bg-green-600 text-white text-xs font-bold py-2 px-3 rounded shadow hover:bg-green-700">
+                        📥 Excel出力
+                    </button>
+                </div>
+                
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-4">
+                    <div class="table-container max-h-96 overflow-y-auto">
+                        <table class="min-w-full text-sm text-left">
+                            <thead class="bg-gray-100 border-b sticky top-0 z-10 shadow-sm">
+                                <tr>
+                                    <th class="p-2">ID</th>
+                                    <th class="p-2">氏名 (組-番組-No)</th>
+                                    <th class="p-2 text-center">状況</th>
+                                    <th class="p-2 text-right">金額(円)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="roster-tbody" class="divide-y">
+                                <!-- 名簿データがここに追加されます -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ローディング -->
+        <div id="loading-overlay" class="hidden fixed inset-0 bg-black bg-opacity-70 z-50 flex flex-col items-center justify-center">
+            <div class="loader mb-4"></div>
+            <p id="loading-text" class="text-white font-bold text-lg">処理中...</p>
+        </div>
+    </main>
+
+    <script>
+        // --- 状態管理 ---
+        let apiKey = '';
+        let currentImageBase64 = '';
+        let roster = []; // 名簿配列
+
+        // DOM
+        const setupArea = document.getElementById('setup-area');
+        const mainArea = document.getElementById('main-area');
+        const errorMsg = document.getElementById('error-msg');
+        const loadingOverlay = document.getElementById('loading-overlay');
+        const loadingText = document.getElementById('loading-text');
+        
+        const apiKeyInput = document.getElementById('api-key-input');
+        
+        const actionButtons = document.getElementById('action-buttons');
+        const previewArea = document.getElementById('preview-area');
+        const extractionArea = document.getElementById('extraction-area');
+        const summarySection = document.getElementById('summary-section');
+        
+        // 抽出用フォーム
+        const extBangumi = document.getElementById('ext-bangumi');
+        const extKumi = document.getElementById('ext-kumi');
+        const extNo = document.getElementById('ext-no');
+        const extName = document.getElementById('ext-name');
+        const extAmount = document.getElementById('ext-amount');
+        const rawText = document.getElementById('raw-text');
+        const matchedSelect = document.getElementById('matched-person-select');
+
+        // --- 初期化 ---
+        document.addEventListener('DOMContentLoaded', async () => {
+            localforage.config({ name: 'ReceiptApp', storeName: 'app_data' });
+            
+            apiKey = await localforage.getItem('visionApiKey');
+            const savedRoster = await localforage.getItem('receiptRosterData');
+            if (savedRoster) roster = savedRoster;
+
+            if (apiKey) {
+                apiKeyInput.placeholder = '【＊＊＊＊＊＊】変更する場合のみ入力';
+                document.getElementById('cancel-settings-btn').classList.remove('hidden');
+            }
+            
+            if (!apiKey || roster.length === 0) {
+                showSetupArea(); // APIキーがない、または名簿がない場合は設定画面へ
+            } else {
+                renderRosterTable();
+                showMainArea();
+            }
+        });
+
+        // --- 画面切り替え ---
+        function showSetupArea() {
+            setupArea.classList.remove('hidden');
+            mainArea.classList.add('hidden');
+        }
+        function showMainArea() {
+            setupArea.classList.add('hidden');
+            mainArea.classList.remove('hidden');
+            resetScanFlow();
+        }
+        function resetScanFlow() {
+            actionButtons.classList.remove('hidden');
+            previewArea.classList.add('hidden');
+            extractionArea.classList.add('hidden');
+            summarySection.classList.remove('hidden');
+            document.getElementById('image-input').value = '';
+        }
+        function showError(msg) {
+            errorMsg.textContent = msg;
+            errorMsg.classList.remove('hidden');
+            setTimeout(() => errorMsg.classList.add('hidden'), 5000);
+            window.scrollTo(0, 0);
+        }
+
+        // --- 設定・名簿インポート ---
+        document.getElementById('nav-settings-btn').addEventListener('click', showSetupArea);
+        document.getElementById('cancel-settings-btn').addEventListener('click', () => {
+            if (roster.length > 0) showMainArea();
+        });
+
+        document.getElementById('save-key-btn').addEventListener('click', async () => {
+            const val = apiKeyInput.value.trim();
+            if (val) {
+                await localforage.setItem('visionApiKey', val);
+                apiKey = val;
+                apiKeyInput.placeholder = '【＊＊＊＊＊＊】変更する場合のみ入力';
+                apiKeyInput.value = '';
+                alert("APIキーを保存しました。");
+            }
+            if (roster.length > 0) showMainArea();
+        });
+
+        // Excel/CSV名簿読み込み (SheetJS)
+        document.getElementById('roster-file-input').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            loadingText.textContent = "名簿を読み込み中...";
+            loadingOverlay.classList.remove('hidden');
+
+            const reader = new FileReader();
+            reader.onload = async (evt) => {
+                try {
+                    const data = new Uint8Array(evt.target.result);
+                    const workbook = XLSX.read(data, {type: 'array'});
+                    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                    let json = XLSX.utils.sheet_to_json(firstSheet, { defval: "" });
+
+                    // 不足している列を補完
+                    json = json.map((row, i) => {
+                        if (!row["ID"]) row["ID"] = String(i + 1).padStart(3, '0');
+                        if (!row["支払状況"]) row["支払状況"] = "";
+                        if (!row["金額"]) row["金額"] = "";
+                        if (!row["支払日時"]) row["支払日時"] = "";
+                        return row;
+                    });
+
+                    roster = json;
+                    await localforage.setItem('receiptRosterData', roster);
+                    
+                    alert(`${roster.length}件の名簿データを読み込みました！`);
+                    renderRosterTable();
+                    if (apiKey) showMainArea();
+                } catch (err) {
+                    showError("名簿の読み込みに失敗しました。ファイル形式を確認してください。");
+                } finally {
+                    loadingOverlay.classList.add('hidden');
+                    e.target.value = "";
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        });
+
+        document.getElementById('clear-roster-btn').addEventListener('click', async () => {
+            if (confirm("名簿とすべての支払履歴を消去しますか？\n（この操作は元に戻せません）")) {
+                roster = [];
+                await localforage.setItem('receiptRosterData', roster);
+                renderRosterTable();
+                alert("データを初期化しました。名簿ファイルをアップロードしてください。");
+            }
+        });
+
+        // --- 画像アップロード ---
+        document.getElementById('camera-btn').addEventListener('click', () => {
+            const input = document.getElementById('image-input');
+            input.setAttribute('capture', 'environment');
+            input.click();
+        });
+        document.getElementById('file-btn').addEventListener('click', () => {
+            const input = document.getElementById('image-input');
+            input.removeAttribute('capture');
+            input.click();
+        });
+
+        document.getElementById('image-input').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            loadingText.textContent = '画像を準備中...';
+            loadingOverlay.classList.remove('hidden');
+            try {
+                currentImageBase64 = await compressImage(file, 1200);
+                document.getElementById('preview-img').src = currentImageBase64;
+                actionButtons.classList.add('hidden');
+                summarySection.classList.add('hidden');
+                previewArea.classList.remove('hidden');
+            } catch (err) {
+                showError("画像エラー"); resetScanFlow();
+            } finally {
+                loadingOverlay.classList.add('hidden');
+            }
+        });
+        document.getElementById('cancel-scan-btn').addEventListener('click', resetScanFlow);
+        document.getElementById('cancel-save-btn').addEventListener('click', resetScanFlow);
+
+        function compressImage(file, maxSize) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        let w = img.width, h = img.height;
+                        if (w > h && w > maxSize) { h *= maxSize / w; w = maxSize; }
+                        else if (h > maxSize) { w *= maxSize / h; h = maxSize; }
+                        const cvs = document.createElement('canvas');
+                        cvs.width = w; cvs.height = h;
+                        cvs.getContext('2d').drawImage(img, 0, 0, w, h);
+                        resolve(cvs.toDataURL('image/jpeg', 0.8));
+                    };
+                    img.onerror = reject;
+                    img.src = e.target.result;
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        }
+
+        // --- Google Vision API 実行 ---
+        document.getElementById('scan-btn').addEventListener('click', async () => {
+            if (!apiKey) { alert("APIキーが設定されていません"); return showSetupArea(); }
+
+            loadingText.textContent = '文字を解析中...';
+            loadingOverlay.classList.remove('hidden');
+            
+            try {
+                const base64Data = currentImageBase64.split(',')[1];
+                const res = await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${apiKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        requests: [{
+                            image: { content: base64Data },
+                            features: [{ type: 'DOCUMENT_TEXT_DETECTION' }],
+                            imageContext: { languageHints: ['ja', 'en'] }
+                        }]
+                    })
+                });
+
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error?.message || "通信エラー");
+
+                const text = data.responses[0]?.fullTextAnnotation?.text || "";
+                if (!text) throw new Error("文字が検出されませんでした");
+
+                parseExtractedText(text); // 解析ロジックへ
+
+                previewArea.classList.add('hidden');
+                extractionArea.classList.remove('hidden');
+
+            } catch (err) {
+                showError("読み取りエラー: " + err.message);
+            } finally {
+                loadingOverlay.classList.add('hidden');
+            }
+        });
+
+        // --- 文字列の抽出と名簿照合 ---
+        function parseExtractedText(text) {
+            rawText.value = text;
+            extBangumi.value = ""; extKumi.value = ""; extNo.value = "";
+            extName.value = ""; extAmount.value = "";
+
+            const lines = text.split('\n');
+
+            // 1. 金額の抽出（全文から一番大きい金額）
+            const amountRegex = /([0-9,]+)[\s　]*円/g;
+            let maxAmount = 0; let match;
+            while ((match = amountRegex.exec(text)) !== null) {
+                let val = parseInt(match[1].replace(/,/g, ''), 10);
+                if (!isNaN(val) && val > maxAmount) maxAmount = val;
+            }
+            if (maxAmount > 0) extAmount.value = maxAmount;
+
+            // 2. 名前の抽出 (スペース＋様の前)
+            for (let line of lines) {
+                let m = line.match(/(.*?)[\s　]+様/);
+                if (m) { extName.value = m[1].trim(); break; }
+            }
+            if (!extName.value) { // スペースなしパターン
+                for (let line of lines) {
+                    let m = line.match(/([^\s]+)様/);
+                    if (m) { extName.value = m[1].trim(); break; }
+                }
+            }
+
+            // 3. 組、番組、No (左上=最初の10行から検索)
+            const upperLines = lines.slice(0, 10);
+            for (let line of upperLines) {
+                if (!extBangumi.value) {
+                    let m = line.match(/([0-9a-zA-Z一-龥]+)[\s　]*番組/);
+                    if (m) extBangumi.value = m[1];
+                }
+                if (!extKumi.value) {
+                    let m = line.match(/([0-9a-zA-Z一-龥]+)[\s　]*組/);
+                    if (m) extKumi.value = m[1];
+                }
+                if (!extNo.value) {
+                    let m = line.match(/No\.?[\s　]*([0-9a-zA-Z]+)/i);
+                    if (m) extNo.value = m[1];
+                }
+            }
+
+            // 4. 名簿データと照合
+            searchAndSetCandidate();
+        }
+
+        function searchAndSetCandidate() {
+            const kumi = extKumi.value;
+            const bangumi = extBangumi.value;
+            const no = extNo.value;
+            const name = extName.value;
+
+            let targetPrefix = (kumi && bangumi && no) ? `${kumi}-${bangumi}-${no}` : "";
+            const normalize = s => (s || "").replace(/[\s　]/g, '');
+            const searchName = normalize(name);
+
+            let matchedId = "";
+
+            // 名簿を走査して合致する人を探す
+            for (let r of roster) {
+                const [prefix, ...nameParts] = (r["氏名"] || "").split(/[\s　]+/);
+                const pName = normalize(nameParts.join(''));
+                
+                // 優先度高: プレフィックス(1-1-1等)と名前が完全一致
+                if (targetPrefix && searchName && prefix === targetPrefix && pName === searchName) {
+                    matchedId = r.ID; break;
+                }
+                // 中: プレフィックスのみ一致
+                if (targetPrefix && prefix === targetPrefix && !matchedId) {
+                    matchedId = r.ID;
+                }
+                // 低: 名前が部分一致
+                if (searchName && pName && (pName.includes(searchName) || searchName.includes(pName)) && !matchedId) {
+                    matchedId = r.ID;
+                }
+            }
+
+            // セレクトボックスを生成
+            matchedSelect.innerHTML = '<option value="NEW">-- 名簿外の新規データとして追加 --</option>';
+            roster.forEach(r => {
+                const opt = document.createElement('option');
+                opt.value = r.ID;
+                opt.textContent = `${r["氏名"]} (済:${r["支払状況"]==="済"?"済":"未"})`;
+                matchedSelect.appendChild(opt);
+            });
+
+            // 候補が見つかれば自動選択
+            if (matchedId) {
+                matchedSelect.value = matchedId;
+            }
+        }
+
+        // --- 支払確定処理 ---
+        document.getElementById('save-list-btn').addEventListener('click', async () => {
+            const selectedId = matchedSelect.value;
+            const amount = parseInt(extAmount.value) || 0;
+            
+            if (selectedId === "NEW") {
+                // 新規として追加
+                const newId = "NEW-" + Date.now().toString().slice(-6);
+                const newName = `${extKumi.value}-${extBangumi.value}-${extNo.value} ${extName.value}`.trim();
+                roster.push({
+                    "ID": newId, "氏名": newName, "組": extKumi.value, 
+                    "金額": amount, "支払状況": "済", "支払日時": new Date().toLocaleString('ja-JP'), "ふりがな": ""
+                });
+            } else {
+                // 既存の名簿を更新
+                const person = roster.find(r => String(r.ID) === String(selectedId));
+                if (person) {
+                    person["支払状況"] = "済";
+                    person["金額"] = amount;
+                    person["支払日時"] = new Date().toLocaleString('ja-JP');
+                }
+            }
+            
+            await localforage.setItem('receiptRosterData', roster);
+            renderRosterTable();
+            resetScanFlow();
+        });
+
+        // --- 名簿・集計の描画 ---
+        function renderRosterTable() {
+            const tbody = document.getElementById('roster-tbody');
+            tbody.innerHTML = '';
+            
+            let paidCount = 0;
+            let totalAmount = 0;
+            
+            roster.forEach(row => {
+                const isPaid = row["支払状況"] === "済";
+                if (isPaid) {
+                    paidCount++;
+                    let amt = parseInt(row["金額"]);
+                    if (!isNaN(amt)) totalAmount += amt;
+                }
+                
+                const tr = document.createElement('tr');
+                tr.className = isPaid ? "bg-green-50" : "hover:bg-gray-50";
+                tr.innerHTML = `
+                    <td class="p-2 border-b text-xs text-gray-500">${escapeHtml(row["ID"])}</td>
+                    <td class="p-2 border-b font-bold truncate max-w-[150px]">${escapeHtml(row["氏名"])}</td>
+                    <td class="p-2 border-b text-center">
+                        ${isPaid ? '<span class="text-green-600 font-bold">済</span>' : '<span class="text-gray-400">未</span>'}
+                    </td>
+                    <td class="p-2 border-b text-right font-mono">${row["金額"] ? parseInt(row["金額"]).toLocaleString() : ''}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+            
+            document.getElementById('stats-total').textContent = roster.length;
+            document.getElementById('stats-paid').textContent = paidCount;
+            document.getElementById('stats-amount').textContent = totalAmount.toLocaleString() + ' 円';
+        }
+
+        // --- Excel (XLSX) 出力 ---
+        document.getElementById('export-excel-btn').addEventListener('click', () => {
+            if (roster.length === 0) return showError("エクスポートするデータがありません。");
+            
+            const ws = XLSX.utils.json_to_sheet(roster);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "集計データ");
+            XLSX.writeFile(wb, `レシート集計_${new Date().toISOString().slice(0,10)}.xlsx`);
+        });
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+        }
+    </script>
+</body>
+</html>
