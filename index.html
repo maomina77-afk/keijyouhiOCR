@@ -37,7 +37,7 @@
 <body class="bg-gray-100 text-gray-800 pb-20">
 
     <header class="bg-blue-700 text-white p-4 shadow-md sticky top-0 z-10 flex justify-between items-center">
-        <h1 class="text-xl font-bold">📊 レシート集計リーダー</h1>
+        <h1 class="text-xl font-bold">📊 レシート集計 (多機能版)</h1>
         <button id="nav-settings-btn" class="p-2 rounded hover:bg-blue-800 text-sm font-bold">⚙️ 設定/名簿</button>
     </header>
 
@@ -490,7 +490,10 @@
 
             const lines = text.split('\n');
             let maxAmount = 0; let match;
-            while ((match = /([0-9,]+)[\s　]*円/g.exec(text)) !== null) {
+            
+            // 【修正】無限ループ防止のため、正規表現オブジェクトを変数に格納して使用
+            const amountRegex = /([0-9,]+)[\s　]*円/g;
+            while ((match = amountRegex.exec(text)) !== null) {
                 let val = parseInt(match[1].replace(/,/g, ''), 10);
                 if (!isNaN(val) && val > maxAmount) maxAmount = val;
             }
@@ -691,6 +694,8 @@
             tbody.innerHTML = '';
             
             let summary = {};
+            let totalAll = 0, totalPaid = 0, totalUnpaid = 0, totalAmount = 0; // 【追加】全体合計用変数
+
             roster.forEach(r => {
                 let kumi = r["組"] || "不明";
                 if (!summary[kumi]) summary[kumi] = { total: 0, paid: 0, unpaid: 0, amount: 0 };
@@ -709,6 +714,9 @@
                 return a.localeCompare(b);
             }).forEach(kumi => {
                 const s = summary[kumi];
+                // 【追加】合計の加算
+                totalAll += s.total; totalPaid += s.paid; totalUnpaid += s.unpaid; totalAmount += s.amount;
+                
                 tbody.innerHTML += `<tr>
                     <td class="p-2 font-bold border-b">${kumi}</td>
                     <td class="p-2 border-b">${s.total}</td>
@@ -717,25 +725,65 @@
                     <td class="p-2 text-right border-b">${s.amount.toLocaleString()}</td>
                 </tr>`;
             });
+
+            // 【追加】一番下に総合計の行を追加
+            tbody.innerHTML += `
+                <tr class="bg-blue-50 font-bold border-t-2 border-blue-200">
+                    <td class="p-2 text-blue-800 border-b">合計</td>
+                    <td class="p-2 text-blue-800 border-b">${totalAll}</td>
+                    <td class="p-2 text-green-700 border-b">${totalPaid}</td>
+                    <td class="p-2 text-red-700 border-b">${totalUnpaid}</td>
+                    <td class="p-2 text-right text-blue-800 border-b">${totalAmount.toLocaleString()}</td>
+                </tr>
+            `;
+
             document.getElementById('stats-modal').classList.remove('hidden');
         };
 
         // --- LINE配信用クリップボードコピー ---
         window.copyToClipboard = async function(type) {
-            let text = "";
+            // 【追加】コピーするテキストの先頭に「組別集計表」の文字列を生成してつける
+            let statsText = "📊 【組別集計表】\n";
+            let summary = {};
+            let tAll=0, tPaid=0, tUnpaid=0, tAmt=0;
+            roster.forEach(r => {
+                let kumi = r["組"] || "不明";
+                if (!summary[kumi]) summary[kumi] = { total: 0, paid: 0, unpaid: 0, amount: 0 };
+                summary[kumi].total++;
+                if (r["支払状況"] === "済") {
+                    summary[kumi].paid++;
+                    let amt = parseInt(r["金額"]);
+                    if (!isNaN(amt)) summary[kumi].amount += amt;
+                } else { summary[kumi].unpaid++; }
+            });
+            Object.keys(summary).sort((a,b)=> {
+                const numA = parseInt(a); const numB = parseInt(b);
+                if(!isNaN(numA) && !isNaN(numB)) return numA - numB;
+                return a.localeCompare(b);
+            }).forEach(kumi => {
+                const s = summary[kumi];
+                statsText += `${kumi}組: ${s.paid}/${s.total}人 (未${s.unpaid}) ${s.amount.toLocaleString()}円\n`;
+                tAll+=s.total; tPaid+=s.paid; tUnpaid+=s.unpaid; tAmt+=s.amount;
+            });
+            statsText += `-------------------\n`;
+            statsText += `合計: ${tPaid}/${tAll}人 (未${tUnpaid}) ${tAmt.toLocaleString()}円\n\n`;
+
+            // 生成した集計テキストを先頭にセット
+            let text = statsText;
+
             if (type === 'all') {
-                text = "【全員リスト】\n";
+                text += "【全員リスト】\n";
                 roster.forEach(r => {
                     const status = r["支払状況"] === "済" ? "済" : "未";
                     text += `${r.ID} ${r["氏名"]} ${r["組"]||"-"}組 ${status} ${r["金額"]?r["金額"]+"円":""}\n`;
                 });
             } else if (type === 'paid') {
-                text = "【支払済リスト】\n";
+                text += "【支払済リスト】\n";
                 roster.filter(r => r["支払状況"] === "済").forEach(r => {
                     text += `${r["氏名"]} (${r["金額"]}円)\n`;
                 });
             } else if (type === 'unpaid') {
-                text = "【未納者リスト】\n";
+                text += "【未納者リスト】\n";
                 roster.filter(r => r["支払状況"] !== "済").forEach(r => { text += `・${r["氏名"]}\n`; });
             }
 
