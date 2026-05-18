@@ -32,12 +32,16 @@
             -webkit-user-select: none;
             -webkit-touch-callout: none;
         }
+        
+        /* 横スクロールバー非表示設定 */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
 </head>
 <body class="bg-gray-100 text-gray-800 pb-20">
 
     <header class="bg-blue-700 text-white p-4 shadow-md sticky top-0 z-10 flex justify-between items-center">
-        <h1 class="text-xl font-bold">📊 レシート集計</h1>
+        <h1 class="text-xl font-bold">📊 レシート集計 (多機能版)</h1>
         <button id="nav-settings-btn" class="p-2 rounded hover:bg-blue-800 text-sm font-bold">⚙️ 設定/名簿</button>
     </header>
 
@@ -53,7 +57,23 @@
             <h2 class="text-lg font-bold mb-2 mt-8 text-blue-700 border-b pb-2">2. 名簿データのインポート</h2>
             <input type="file" id="roster-file-input" accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" class="w-full border p-2 rounded mb-4">
             
-            <div class="mt-8 border-t pt-4">
+            <!-- 【追加】金額の候補設定 -->
+            <h2 class="text-lg font-bold mb-2 mt-8 text-blue-700 border-b pb-2">3. 設定金額の候補（自由入力）</h2>
+            <p class="text-xs text-gray-600 mb-2">よく使う金額を登録しておくと、ワンタッチで入力できます。</p>
+            <div id="preset-settings-list" class="flex flex-wrap gap-2 mb-3"></div>
+            <div class="flex gap-2 mb-8">
+                <input type="number" id="new-preset-input" placeholder="金額 (例: 1500)" class="border p-2 rounded w-full outline-none focus:ring-2 focus:ring-blue-500 text-right">
+                <button id="add-preset-btn" class="bg-blue-500 text-white px-4 rounded font-bold shadow hover:bg-blue-600 whitespace-nowrap">追加</button>
+            </div>
+
+            <!-- 【移動】一括出力ボタン -->
+            <h2 class="text-lg font-bold mb-2 mt-8 text-blue-700 border-b pb-2">4. データ出力と初期化</h2>
+            <button id="export-data-btn" class="w-full bg-green-600 text-white font-bold py-4 px-4 rounded-lg shadow hover:bg-green-700 flex flex-col items-center justify-center mb-4 transition-colors">
+                <span class="text-lg">📥 全データ一括出力</span>
+                <span class="text-xs font-normal mt-1 opacity-90">Excelファイル ＋ レシート写真ZIP</span>
+            </button>
+            
+            <div class="mt-4 border-t pt-4">
                 <button id="cancel-settings-btn" class="hidden w-full bg-gray-200 text-gray-700 font-bold py-3 px-4 rounded shadow hover:bg-gray-300 mb-4">メイン画面へ戻る</button>
                 <button id="clear-roster-btn" class="w-full bg-red-50 text-red-600 font-bold py-2 rounded hover:bg-red-100 border border-red-200 text-sm">🗑️ 名簿と履歴をすべて初期化</button>
             </div>
@@ -114,16 +134,17 @@
                         <input type="text" id="ext-no" class="w-full border p-2 rounded text-sm bg-gray-50">
                     </div>
                 </div>
-                <div class="grid grid-cols-2 gap-4 mb-4">
-                    <div>
-                        <label class="block text-xs font-bold text-gray-600 mb-1">お名前 (様の前)</label>
-                        <input type="text" id="ext-name" class="w-full border p-2 rounded text-sm bg-gray-50">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-gray-600 mb-1">金額 (円の前)</label>
-                        <input type="number" id="ext-amount" class="w-full border p-2 rounded text-sm text-right bg-gray-50">
-                    </div>
+                <div class="mb-4">
+                    <label class="block text-xs font-bold text-gray-600 mb-1">お名前 (様の前)</label>
+                    <input type="text" id="ext-name" class="w-full border p-2 rounded text-sm bg-gray-50">
                 </div>
+                <!-- 【修正】金額入力（候補ボタン＋自由入力） -->
+                <div class="mb-4">
+                    <label class="block text-xs font-bold text-gray-600 mb-1">金額 (円)</label>
+                    <div id="ext-preset-container" class="flex gap-2 mb-2 overflow-x-auto no-scrollbar pb-1"></div>
+                    <input type="number" id="ext-amount" class="w-full border border-gray-300 p-2 rounded text-right focus:ring-2 focus:ring-blue-500">
+                </div>
+                
                 <details class="mb-4 text-xs text-gray-500">
                     <summary class="cursor-pointer hover:text-gray-700">生のOCRテキストを確認</summary>
                     <textarea id="raw-text" class="w-full h-24 mt-2 p-2 border rounded font-mono" readonly></textarea>
@@ -143,13 +164,12 @@
             <div id="summary-section">
                 <div class="flex justify-between items-end mb-2 border-b pb-2">
                     <!-- タイトル長押しでコピーメニュー -->
-                    <div id="roster-header-title" class="long-pressable cursor-pointer active:bg-gray-200 p-1 rounded transition-colors">
-                        <h2 class="text-lg font-bold text-gray-700">📋 名簿一覧</h2>
-                        <span class="text-xs text-blue-500">👆長押しでLINE用にコピー👆</span>
+                    <div id="roster-header-title" class="long-pressable cursor-pointer active:bg-gray-200 p-1 rounded transition-colors w-full flex justify-between items-center">
+                        <div>
+                            <h2 class="text-lg font-bold text-gray-700">📋 名簿一覧</h2>
+                            <span class="text-xs text-blue-500">👆長押しでLINE用にコピー👆</span>
+                        </div>
                     </div>
-                    <button id="export-data-btn" class="bg-green-600 text-white text-xs font-bold py-2 px-3 rounded shadow hover:bg-green-700 flex flex-col items-center">
-                        <span>📥 一括出力</span><span class="text-[9px] font-normal">(Excel + 写真ZIP)</span>
-                    </button>
                 </div>
                 
                 <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-4">
@@ -183,17 +203,32 @@
                 <button onclick="copyToClipboard('all')" class="w-full bg-blue-50 text-blue-700 border border-blue-200 font-bold py-3 mb-3 rounded-lg hover:bg-blue-100">全員リストをコピー</button>
                 <button onclick="copyToClipboard('paid')" class="w-full bg-green-50 text-green-700 border border-green-200 font-bold py-3 mb-3 rounded-lg hover:bg-green-100">【済】リストをコピー</button>
                 <button onclick="copyToClipboard('unpaid')" class="w-full bg-red-50 text-red-700 border border-red-200 font-bold py-3 mb-5 rounded-lg hover:bg-red-100">【未】リストをコピー</button>
-                <button onclick="closeModal('copy-modal')" class="w-full bg-gray-200 text-gray-700 font-bold py-3 rounded-lg">閉じる</button>
+                <button onclick="closeModal('copy-modal')" class="w-full bg-gray-200 text-gray-700 font-bold py-3 rounded-lg">キャンセル</button>
             </div>
         </div>
 
-        <!-- 2. 組別集計表モーダル -->
+        <!-- 【追加】 2. コピー完了・共有モーダル -->
+        <div id="share-modal" class="hidden fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center p-4">
+            <div class="bg-white rounded-xl shadow-lg w-full max-w-sm p-5 animate-scale">
+                <div class="text-center mb-4">
+                    <span class="text-4xl">✅</span>
+                    <h3 class="font-bold text-lg mt-2 text-gray-800">コピー完了</h3>
+                </div>
+                <p class="text-sm text-gray-600 mb-5 text-center leading-relaxed">クリップボードに保存しました。<br>そのまま貼り付けるか、下のボタンから<br>LINE等を開いて共有できます。</p>
+                <button id="native-share-btn" class="w-full bg-green-500 text-white font-bold py-3 mb-3 rounded-lg shadow hover:bg-green-600 flex justify-center items-center gap-2">
+                    <span class="text-xl">📲</span><span>アプリで共有する</span>
+                </button>
+                <button onclick="closeModal('share-modal')" class="w-full bg-gray-200 text-gray-700 font-bold py-3 rounded-lg">OK (閉じる)</button>
+            </div>
+        </div>
+
+        <!-- 3. 組別集計表モーダル -->
         <div id="stats-modal" class="hidden fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center p-4">
             <div class="bg-white rounded-xl shadow-lg w-full max-w-md p-5 max-h-[80vh] flex flex-col">
                 <h3 class="font-bold text-lg mb-2 border-b pb-2 text-gray-700">📊 組別集計表</h3>
                 <div class="overflow-y-auto flex-1 mb-4 border rounded">
                     <table class="min-w-full text-sm text-center">
-                        <thead class="bg-gray-100 sticky top-0">
+                        <thead class="bg-gray-100 sticky top-0 shadow-sm">
                             <tr><th class="p-2 border-b">組</th><th class="p-2 border-b">全体</th><th class="p-2 text-green-600 border-b">済</th><th class="p-2 text-red-600 border-b">未</th><th class="p-2 border-b text-right">金額(円)</th></tr>
                         </thead>
                         <tbody id="stats-tbody" class="divide-y"></tbody>
@@ -203,7 +238,7 @@
             </div>
         </div>
 
-        <!-- 3. 手動編集モーダル -->
+        <!-- 4. 手動編集モーダル -->
         <div id="edit-modal" class="hidden fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center p-4">
             <div class="bg-white rounded-xl shadow-lg w-full max-w-sm p-5">
                 <h3 class="font-bold text-lg mb-4 border-b pb-2 text-gray-700">📝 支払状況の手動編集</h3>
@@ -221,7 +256,9 @@
                 </div>
                 <div class="mb-5">
                     <label class="block text-xs font-bold text-gray-600 mb-1">金額(円)</label>
-                    <input type="number" id="edit-amount" class="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-blue-500 font-mono text-lg">
+                    <!-- 【修正】金額入力（候補ボタン＋自由入力） -->
+                    <div id="edit-preset-container" class="flex gap-2 mb-2 overflow-x-auto no-scrollbar pb-1"></div>
+                    <input type="number" id="edit-amount" class="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-blue-500 font-mono text-lg text-right">
                 </div>
                 <div class="flex gap-2">
                     <button onclick="closeModal('edit-modal')" class="w-1/3 bg-gray-200 text-gray-700 font-bold py-3 rounded-lg">戻る</button>
@@ -233,7 +270,7 @@
         <!-- ローディング -->
         <div id="loading-overlay" class="hidden fixed inset-0 bg-black bg-opacity-70 z-50 flex flex-col items-center justify-center">
             <div class="loader mb-4"></div>
-            <p id="loading-text" class="text-white font-bold text-lg">処理中...</p>
+            <p id="loading-text" class="text-white font-bold text-lg text-center whitespace-pre-wrap">処理中...</p>
         </div>
     </main>
 
@@ -245,6 +282,9 @@
         let roster = [];      // 名簿データ
         let historyLog = [];  // 変更履歴データ (Excelエクスポート用)
         let scanData = [];    // スキャン画像とOCRテキスト保存用 (ZIPエクスポート用)
+        
+        let presetAmounts = [1000, 2000, 3000, 5000, 10000]; // 金額候補のデフォルト
+        let currentShareText = ""; // 共有用の一時保存テキスト
         
         // ソート管理
         let sortKey = 'id';
@@ -258,10 +298,15 @@
             const savedRoster = await localforage.getItem('receiptRosterData');
             const savedLog = await localforage.getItem('receiptHistoryLog');
             const savedScan = await localforage.getItem('receiptScanData');
+            const savedPresets = await localforage.getItem('receiptPresetAmounts');
             
             if (savedRoster) roster = savedRoster;
             if (savedLog) historyLog = savedLog;
             if (savedScan) scanData = savedScan;
+            if (savedPresets) presetAmounts = savedPresets;
+
+            // プレセット金額の描画
+            renderPresetSettings();
 
             if (apiKey) {
                 document.getElementById('api-key-input').placeholder = '【＊＊＊＊＊＊】変更する場合のみ入力';
@@ -282,6 +327,61 @@
             });
         });
 
+        // --- 設定金額候補 (プリセット) の管理 ---
+        function renderPresetSettings() {
+            const list = document.getElementById('preset-settings-list');
+            list.innerHTML = '';
+            presetAmounts.forEach((amt, idx) => {
+                const span = document.createElement('span');
+                span.className = "inline-flex items-center bg-gray-100 border border-gray-300 text-gray-700 px-3 py-1 rounded-full text-sm font-bold shadow-sm";
+                span.innerHTML = `${amt.toLocaleString()}円 <button class="ml-2 text-red-500 hover:text-red-700 font-bold" onclick="deletePreset(${idx})">×</button>`;
+                list.appendChild(span);
+            });
+            renderPresetButtons(); // OCR/編集画面のボタンも更新
+        }
+
+        document.getElementById('add-preset-btn').addEventListener('click', async () => {
+            const val = parseInt(document.getElementById('new-preset-input').value);
+            if(val && !presetAmounts.includes(val)) {
+                presetAmounts.push(val);
+                presetAmounts.sort((a,b) => a - b);
+                await localforage.setItem('receiptPresetAmounts', presetAmounts);
+                renderPresetSettings();
+                document.getElementById('new-preset-input').value = '';
+            }
+        });
+
+        window.deletePreset = async function(idx) {
+            presetAmounts.splice(idx, 1);
+            await localforage.setItem('receiptPresetAmounts', presetAmounts);
+            renderPresetSettings();
+        };
+
+        // 抽出画面・編集画面にボタンを生成する
+        function renderPresetButtons() {
+            const extContainer = document.getElementById('ext-preset-container');
+            const editContainer = document.getElementById('edit-preset-container');
+            if(extContainer) extContainer.innerHTML = ''; 
+            if(editContainer) editContainer.innerHTML = '';
+            
+            presetAmounts.forEach(amt => {
+                const btnHtml = `<button type="button" class="px-4 py-2 bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-sm font-bold whitespace-nowrap active:bg-blue-300 transition-colors shadow-sm" onclick="setPresetAmount(${amt}, 'ext')">${amt.toLocaleString()}</button>`;
+                if(extContainer) extContainer.innerHTML += btnHtml;
+                
+                const btnHtmlEdit = `<button type="button" class="px-4 py-2 bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-sm font-bold whitespace-nowrap active:bg-blue-300 transition-colors shadow-sm" onclick="setPresetAmount(${amt}, 'edit')">${amt.toLocaleString()}</button>`;
+                if(editContainer) editContainer.innerHTML += btnHtmlEdit;
+            });
+        }
+
+        // 金額ボタンを押した時の処理
+        window.setPresetAmount = function(amt, target) {
+            if(target === 'ext') document.getElementById('ext-amount').value = amt;
+            if(target === 'edit') document.getElementById('edit-amount').value = amt;
+            // スマホ等で軽く振動させる
+            if (navigator.vibrate) navigator.vibrate(20);
+        };
+
+
         // --- 長押し判定用ユーティリティ関数 ---
         function setupLongPress(element, callback) {
             let timer;
@@ -297,39 +397,29 @@
                 if (timer) clearTimeout(timer);
                 timer = setTimeout(() => { 
                     timer = null; 
-                    // スマホで可能なら軽くバイブレーション
                     if (navigator.vibrate) navigator.vibrate(40);
                     callback(e); 
-                }, 600); // 0.6秒
+                }, 600); 
             };
 
-            const cancel = () => { 
-                if (timer) clearTimeout(timer); 
-                timer = null; 
-            };
+            const cancel = () => { if (timer) clearTimeout(timer); timer = null; };
 
             const move = (e) => {
                 if (!timer) return;
                 const eventObj = e.touches ? e.touches[0] : e;
                 const moveX = Math.abs(eventObj.clientX - startX);
                 const moveY = Math.abs(eventObj.clientY - startY);
-                // 10ピクセル以上指が動いたらスクロールとみなして長押しキャンセル
-                if (moveX > 10 || moveY > 10) {
-                    cancel();
-                }
+                if (moveX > 10 || moveY > 10) { cancel(); }
             };
 
             element.addEventListener('touchstart', start, { passive: true });
             element.addEventListener('touchend', cancel);
             element.addEventListener('touchcancel', cancel);
             element.addEventListener('touchmove', move, { passive: true });
-
             element.addEventListener('mousedown', start);
             element.addEventListener('mouseup', cancel);
             element.addEventListener('mouseleave', cancel);
             element.addEventListener('mousemove', move);
-            
-            // 長押し時にデフォルトのメニュー(画像保存など)が出るのを防ぐ
             element.addEventListener('contextmenu', (e) => e.preventDefault());
         }
 
@@ -402,7 +492,7 @@
         });
 
         document.getElementById('clear-roster-btn').addEventListener('click', async () => {
-            if (confirm("名簿とすべての支払履歴、保存された写真を消去しますか？\n（この操作は元に戻せません）")) {
+            if (confirm("名簿とすべての支払履歴、保存された写真を消去しますか？\n（設定金額とAPIキーは残ります。この操作は元に戻せません）")) {
                 roster = []; historyLog = []; scanData = [];
                 await localforage.setItem('receiptRosterData', roster);
                 await localforage.setItem('receiptHistoryLog', historyLog);
@@ -449,7 +539,7 @@
                         const cvs = document.createElement('canvas');
                         cvs.width = w; cvs.height = h;
                         cvs.getContext('2d').drawImage(img, 0, 0, w, h);
-                        resolve(cvs.toDataURL('image/jpeg', 0.8)); // 軽量化のため0.8
+                        resolve(cvs.toDataURL('image/jpeg', 0.8));
                     };
                     img.onerror = reject; img.src = e.target.result;
                 };
@@ -491,7 +581,6 @@
             const lines = text.split('\n');
             let maxAmount = 0; let match;
             
-            // 【修正】無限ループ防止のため、正規表現オブジェクトを変数に格納して使用
             const amountRegex = /([0-9,]+)[\s　]*円/g;
             while ((match = amountRegex.exec(text)) !== null) {
                 let val = parseInt(match[1].replace(/,/g, ''), 10);
@@ -569,13 +658,10 @@
             }
 
             if (targetPerson) {
-                // 変更履歴ログを追加
                 historyLog.push({
                     "日時": nowStr, "操作": "OCRスキャン", "ID": targetPerson.ID, "氏名": targetPerson["氏名"],
                     "変更前状況": oldStatus, "変更後状況": "済", "変更前金額": oldAmount, "変更後金額": amount
                 });
-                
-                // ZIP出力用に画像とテキストを保存
                 scanData.push({
                     id: targetPerson.ID, name: targetPerson["氏名"], datetime: nowStr,
                     imageBase64: currentImageBase64, rawText: document.getElementById('raw-text').value
@@ -625,7 +711,6 @@
             closeModal('edit-modal');
         };
 
-
         // --- ソートと描画 ---
         window.toggleSort = function(key) {
             if (sortKey === key) { sortDesc = !sortDesc; }
@@ -634,23 +719,18 @@
         };
 
         function renderRosterTable() {
-            // アイコン更新
             ['id', 'kumi', 'status'].forEach(k => {
                 document.getElementById(`sort-icon-${k}`).textContent = (sortKey === k) ? (sortDesc ? '▼' : '▲') : '';
             });
 
-            // データのソート
             let sortedData = [...roster];
             sortedData.sort((a, b) => {
                 let valA = a[sortKey === 'status' ? '支払状況' : sortKey === 'kumi' ? '組' : 'ID'];
                 let valB = b[sortKey === 'status' ? '支払状況' : sortKey === 'kumi' ? '組' : 'ID'];
-                
-                // 組やIDが数値の場合、数値としてソート
                 if (sortKey === 'kumi' || sortKey === 'id') {
                     const numA = parseInt(valA); const numB = parseInt(valB);
                     if (!isNaN(numA) && !isNaN(numB)) { return sortDesc ? numB - numA : numA - numB; }
                 }
-                
                 valA = String(valA || ""); valB = String(valB || "");
                 return sortDesc ? valB.localeCompare(valA) : valA.localeCompare(valB);
             });
@@ -694,7 +774,7 @@
             tbody.innerHTML = '';
             
             let summary = {};
-            let totalAll = 0, totalPaid = 0, totalUnpaid = 0, totalAmount = 0; // 【追加】全体合計用変数
+            let totalAll = 0, totalPaid = 0, totalUnpaid = 0, totalAmount = 0;
 
             roster.forEach(r => {
                 let kumi = r["組"] || "不明";
@@ -707,14 +787,12 @@
                 } else { summary[kumi].unpaid++; }
             });
 
-            // 組名でソートして表示
             Object.keys(summary).sort((a,b)=> {
                 const numA = parseInt(a); const numB = parseInt(b);
                 if(!isNaN(numA) && !isNaN(numB)) return numA - numB;
                 return a.localeCompare(b);
             }).forEach(kumi => {
                 const s = summary[kumi];
-                // 【追加】合計の加算
                 totalAll += s.total; totalPaid += s.paid; totalUnpaid += s.unpaid; totalAmount += s.amount;
                 
                 tbody.innerHTML += `<tr>
@@ -726,7 +804,6 @@
                 </tr>`;
             });
 
-            // 【追加】一番下に総合計の行を追加
             tbody.innerHTML += `
                 <tr class="bg-blue-50 font-bold border-t-2 border-blue-200">
                     <td class="p-2 text-blue-800 border-b">合計</td>
@@ -740,9 +817,8 @@
             document.getElementById('stats-modal').classList.remove('hidden');
         };
 
-        // --- LINE配信用クリップボードコピー ---
+        // --- LINE配信用クリップボードコピー ＆ 共有 ---
         window.copyToClipboard = async function(type) {
-            // 【追加】コピーするテキストの先頭に「組別集計表」の文字列を生成してつける
             let statsText = "📊 【組別集計表】\n";
             let summary = {};
             let tAll=0, tPaid=0, tUnpaid=0, tAmt=0;
@@ -768,7 +844,6 @@
             statsText += `-------------------\n`;
             statsText += `合計: ${tPaid}/${tAll}人 (未${tUnpaid}) ${tAmt.toLocaleString()}円\n\n`;
 
-            // 生成した集計テキストを先頭にセット
             let text = statsText;
 
             if (type === 'all') {
@@ -787,17 +862,38 @@
                 roster.filter(r => r["支払状況"] !== "済").forEach(r => { text += `・${r["氏名"]}\n`; });
             }
 
+            // テキストをグローバル変数に保存して共有ボタンで使えるようにする
+            currentShareText = text;
+
             try {
                 await navigator.clipboard.writeText(text);
-                alert("コピーしました！\nLINEなどに貼り付けできます。");
                 closeModal('copy-modal');
+                document.getElementById('share-modal').classList.remove('hidden');
             } catch (err) {
                 // 昔のブラウザ向けフォールバック
                 const ta = document.createElement('textarea'); ta.value = text;
                 document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
-                alert("コピーしました！"); closeModal('copy-modal');
+                closeModal('copy-modal');
+                document.getElementById('share-modal').classList.remove('hidden');
             }
         };
+
+        // Web Share API による直接共有
+        document.getElementById('native-share-btn').addEventListener('click', async () => {
+            if (navigator.share) {
+                try {
+                    await navigator.share({
+                        title: '集計データ',
+                        text: currentShareText
+                    });
+                    closeModal('share-modal');
+                } catch (err) {
+                    console.log('共有がキャンセルされたか失敗しました', err);
+                }
+            } else {
+                alert("お使いのブラウザは共有機能に対応していません。\nテキストはすでにコピーされているため、直接LINEなどのアプリを開いて貼り付けてください。");
+            }
+        });
 
         // --- Excel + 写真 一括ZIP出力 ---
         document.getElementById('export-data-btn').addEventListener('click', async () => {
@@ -806,7 +902,6 @@
             showLoading("Excelと写真を圧縮中...\n(枚数が多いと数秒かかります)");
             
             try {
-                // 1. Excelファイルの作成 (SheetJS)
                 const wsRoster = XLSX.utils.json_to_sheet(roster);
                 const wsHistory = XLSX.utils.json_to_sheet(historyLog.length ? historyLog : [{"情報":"まだ変更履歴がありません"}]);
                 const wb = XLSX.utils.book_new();
@@ -816,18 +911,13 @@
                 
                 const dateStr = new Date().toISOString().slice(0,10).replace(/-/g, "");
 
-                // 2. ZIPファイルの構築 (JSZip)
                 const zip = new JSZip();
-                
-                // エクセルをルート直下に配置
                 zip.file(`レシート集計表_${dateStr}.xlsx`, excelBuffer);
 
-                // 画像とテキストをフォルダに分ける
                 const imgFolder = zip.folder("レシート写真");
                 const txtFolder = zip.folder("OCRテキスト");
 
                 scanData.forEach(data => {
-                    // ファイル名に使えない文字をアンダースコアに置換
                     const safeName = (data.name || "不明").replace(/[\/\\:*?"<>|　 ]/g, "_");
                     const safeDate = (data.datetime || "").replace(/[\/:\s]/g, "");
                     const baseFilename = `${data.id}_${safeName}_${safeDate}`;
@@ -841,7 +931,6 @@
                     }
                 });
 
-                // 3. ZIPを生成してダウンロード (DEFLATE圧縮設定で軽くする)
                 const zipBlob = await zip.generateAsync({type:"blob", compression: "DEFLATE", compressionOptions: { level: 6 }});
                 
                 const a = document.createElement('a');
